@@ -22,6 +22,12 @@ class SimpleWebGL {
     init() {
         const gl = this.gl;
         
+        console.log('WebGL context initialized');
+        console.log('Canvas dimensions:', this.canvas.width, 'x', this.canvas.height);
+        console.log('WebGL version:', gl.getParameter(gl.VERSION));
+        console.log('WebGL vendor:', gl.getParameter(gl.VENDOR));
+        console.log('WebGL renderer:', gl.getParameter(gl.RENDERER));
+        
         // Basic vertex shader
         const vertexShaderSource = `
             attribute vec4 a_position;
@@ -35,9 +41,9 @@ class SimpleWebGL {
             varying float v_lighting;
             
             void main() {
-                gl_Position = vec4(a_position.xy, 0.0, 1.0);
-                v_normal = a_normal;
-                v_lighting = max(dot(normalize(v_normal), u_lightDirection), 0.0);
+                gl_Position = u_matrix * a_position;
+                v_normal = normalize((u_normalMatrix * vec4(a_normal, 0.0)).xyz);
+                v_lighting = max(dot(v_normal, normalize(u_lightDirection)), 0.0);
             }
         `;
         
@@ -56,10 +62,16 @@ class SimpleWebGL {
         
         this.program = this.createProgram(vertexShaderSource, fragmentShaderSource);
         
+        if (!this.program) {
+            throw new Error('Failed to create shader program');
+        }
+        
         // Set up viewport
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.enable(gl.DEPTH_TEST);
         gl.enable(gl.CULL_FACE);
+        
+        console.log('WebGL viewport set to:', this.canvas.width, 'x', this.canvas.height);
         
         this.setupUniforms();
     }
@@ -111,25 +123,28 @@ class SimpleWebGL {
     }
     
     createHatGeometry(type, crownHeight, brimSize, color) {
-        // Create a simple test triangle first
-        const testGeometry = {
+        console.log('Creating hat geometry:', type, crownHeight, brimSize);
+        
+        // For debugging, create a simple triangle that should be visible
+        const debugGeometry = {
             vertices: [
-                0.0, 0.5, 0.0,  // Top
-                -0.5, -0.5, 0.0, // Bottom left
-                0.5, -0.5, 0.0   // Bottom right
+                0.0, 0.8, 0.0,   // Top vertex
+                -0.8, -0.8, 0.0, // Bottom left
+                0.8, -0.8, 0.0   // Bottom right
             ],
             normals: [
-                0.0, 0.0, 1.0,  // Top
-                0.0, 0.0, 1.0,  // Bottom left
-                0.0, 0.0, 1.0   // Bottom right
+                0.0, 0.0, 1.0,   // Top vertex normal
+                0.0, 0.0, 1.0,   // Bottom left normal
+                0.0, 0.0, 1.0    // Bottom right normal
             ],
             indices: [
-                0, 1, 2
+                0, 1, 2  // Single triangle
             ]
         };
         
-        const mesh = this.createMesh(testGeometry, color);
-        console.log('Created simple test triangle:', mesh);
+        console.log('Using debug triangle geometry instead of hat for testing');
+        const mesh = this.createMesh(debugGeometry, color);
+        console.log('Created debug triangle mesh with', debugGeometry.vertices.length / 3, 'vertices and', debugGeometry.indices.length, 'indices');
         return mesh;
     }
     
@@ -312,6 +327,30 @@ class SimpleWebGL {
     createMesh(geometry, color) {
         const gl = this.gl;
         
+        // Debug: Log vertex bounds
+        const vertices = geometry.vertices;
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const z = vertices[i + 2];
+            
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            minZ = Math.min(minZ, z);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+            maxZ = Math.max(maxZ, z);
+        }
+        
+        console.log('Geometry bounds:', {
+            x: [minX, maxX],
+            y: [minY, maxY],
+            z: [minZ, maxZ]
+        });
+        
         // Create buffers
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -363,7 +402,10 @@ class SimpleWebGL {
         
         // Debug: Log matrices occasionally
         if (Math.floor(time) % 3 === 0 && Math.floor(time * 10) % 10 === 0) {
+            console.log('Projection Matrix:', projectionMatrix);
+            console.log('ModelView Matrix:', modelViewMatrix);
             console.log('MVP Matrix:', mvpMatrix);
+            console.log('Mesh index count:', mesh.indexCount);
             console.log('Mesh color:', mesh.color);
         }
         
@@ -372,6 +414,12 @@ class SimpleWebGL {
         gl.uniformMatrix4fv(this.uniforms.normalMatrix, false, normalMatrix);
         gl.uniform3fv(this.uniforms.lightDirection, [0.5, 0.7, 0.5]);
         gl.uniform3fv(this.uniforms.color, mesh.color);
+        
+        // Check for errors after setting uniforms
+        let error = gl.getError();
+        if (error !== gl.NO_ERROR) {
+            console.error('WebGL error after setting uniforms:', error);
+        }
         
         // Bind position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, mesh.positionBuffer);
@@ -383,34 +431,47 @@ class SimpleWebGL {
         gl.vertexAttribPointer(this.attributes.normal, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.attributes.normal);
         
+        // Check for errors after binding attributes
+        error = gl.getError();
+        if (error !== gl.NO_ERROR) {
+            console.error('WebGL error after binding attributes:', error);
+        }
+        
         // Bind index buffer and draw
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
         gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
         
-        // Check for WebGL errors
-        const error = gl.getError();
+        // Check for errors after drawing
+        error = gl.getError();
         if (error !== gl.NO_ERROR) {
-            console.error('WebGL error:', error);
+            console.error('WebGL error after drawing:', error);
         }
     }
     
     createPerspectiveMatrix(fieldOfView, aspect, near, far) {
-        // Simplified orthographic projection for testing
+        const f = 1.0 / Math.tan(fieldOfView / 2);
+        const rangeInv = 1.0 / (near - far);
+        
         return new Float32Array([
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1
+            f / aspect, 0, 0, 0,
+            0, f, 0, 0,
+            0, 0, (near + far) * rangeInv, -1,
+            0, 0, 2 * near * far * rangeInv, 0
         ]);
     }
     
     createModelViewMatrix(time) {
-        // Simplified identity matrix with simple translation
+        // Create a simple view matrix - camera at (0, 0, 3) looking at origin
+        const rotationY = this.rotation;
+        const cos = Math.cos(rotationY);
+        const sin = Math.sin(rotationY);
+        
+        // First apply rotation around Y-axis, then translate back
         return new Float32Array([
-            1, 0, 0, 0,
+            cos, 0, sin, 0,
             0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, -2, 1  // Just translate back by 2 units
+            -sin, 0, cos, 0,
+            0, 0, -3, 1  // Camera positioned at z=3 looking at origin
         ]);
     }
     
@@ -427,11 +488,12 @@ class SimpleWebGL {
     }
     
     createNormalMatrix(modelViewMatrix) {
-        // Simplified normal matrix (just return identity for now)
+        // Extract the 3x3 rotation part and transpose it for normal transformation
+        const m = modelViewMatrix;
         return new Float32Array([
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
+            m[0], m[4], m[8], 0,
+            m[1], m[5], m[9], 0,
+            m[2], m[6], m[10], 0,
             0, 0, 0, 1
         ]);
     }
