@@ -23,9 +23,10 @@ class HatConfigurator {
             this.setupWebGL();
             this.setupUI();
             this.setupEventListeners();
-            this.createInitialHat();
             
             this.isInitialized = true;
+            this.createInitialHat();
+            
             this.animate();
             
             console.log('3D Hat Configurator initialized successfully');
@@ -143,10 +144,13 @@ class HatConfigurator {
         this.canvas.height = rect.height;
         this.canvas.style.width = rect.width + 'px';
         this.canvas.style.height = rect.height + 'px';
+        
+        console.log('Canvas resized to:', rect.width, 'x', rect.height);
     }
     
     // Create initial hat
     createInitialHat() {
+        console.log('Creating initial hat with config:', this.currentConfig);
         this.updateHat(this.currentConfig);
     }
     
@@ -159,6 +163,9 @@ class HatConfigurator {
         // Convert hex color to RGB
         const color = this.webgl.hexToRgb(this.currentConfig.color);
         
+        console.log('Creating hat with config:', this.currentConfig);
+        console.log('Color:', color);
+        
         // Create new hat mesh
         this.currentHat = this.webgl.createHatGeometry(
             this.currentConfig.type,
@@ -166,6 +173,8 @@ class HatConfigurator {
             this.currentConfig.brimSize,
             color
         );
+        
+        console.log('Hat mesh created:', this.currentHat);
     }
     
     // Animation loop

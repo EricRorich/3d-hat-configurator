@@ -289,10 +289,10 @@ class UIController {
         this.isInitialized = true;
         
         // Try to load saved configuration
-        if (!this.loadConfiguration()) {
-            // If no saved config, use default
-            this.updateHat();
-        }
+        this.loadConfiguration();
+        
+        // Always ensure hat is created
+        this.updateHat();
     }
     
     // Handle window resize

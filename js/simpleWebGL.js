@@ -26,20 +26,17 @@ class SimpleWebGL {
         const vertexShaderSource = `
             attribute vec4 a_position;
             attribute vec3 a_normal;
-            attribute vec2 a_texCoord;
             
             uniform mat4 u_matrix;
             uniform mat4 u_normalMatrix;
             uniform vec3 u_lightDirection;
             
             varying vec3 v_normal;
-            varying vec2 v_texCoord;
             varying float v_lighting;
             
             void main() {
-                gl_Position = u_matrix * a_position;
-                v_normal = mat3(u_normalMatrix) * a_normal;
-                v_texCoord = a_texCoord;
+                gl_Position = vec4(a_position.xy, 0.0, 1.0);
+                v_normal = a_normal;
                 v_lighting = max(dot(normalize(v_normal), u_lightDirection), 0.0);
             }
         `;
@@ -114,8 +111,25 @@ class SimpleWebGL {
     }
     
     createHatGeometry(type, crownHeight, brimSize, color) {
-        const geometry = this.generateHatVertices(type, crownHeight, brimSize);
-        const mesh = this.createMesh(geometry, color);
+        // Create a simple test triangle first
+        const testGeometry = {
+            vertices: [
+                0.0, 0.5, 0.0,  // Top
+                -0.5, -0.5, 0.0, // Bottom left
+                0.5, -0.5, 0.0   // Bottom right
+            ],
+            normals: [
+                0.0, 0.0, 1.0,  // Top
+                0.0, 0.0, 1.0,  // Bottom left
+                0.0, 0.0, 1.0   // Bottom right
+            ],
+            indices: [
+                0, 1, 2
+            ]
+        };
+        
+        const mesh = this.createMesh(testGeometry, color);
+        console.log('Created simple test triangle:', mesh);
         return mesh;
     }
     
@@ -142,6 +156,8 @@ class SimpleWebGL {
     }
     
     generateFedoraVertices(crownHeight, brimSize) {
+        console.log('Generating fedora vertices:', crownHeight, brimSize);
+        
         const vertices = [];
         const normals = [];
         const indices = [];
@@ -150,40 +166,125 @@ class SimpleWebGL {
         const crownRadius = 0.8;
         const brimRadius = crownRadius + brimSize;
         
-        // Crown vertices
-        for (let i = 0; i <= segments; i++) {
+        let vertexIndex = 0;
+        
+        // Crown center vertices
+        // Bottom crown center
+        vertices.push(0, 0, 0);
+        normals.push(0, -1, 0);
+        const bottomCenterIndex = vertexIndex++;
+        
+        // Top crown center  
+        vertices.push(0, crownHeight, 0);
+        normals.push(0, 1, 0);
+        const topCenterIndex = vertexIndex++;
+        
+        // Crown edge vertices (bottom and top)
+        const crownBottomStart = vertexIndex;
+        for (let i = 0; i < segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             const x = Math.cos(angle) * crownRadius;
             const z = Math.sin(angle) * crownRadius;
             
-            // Bottom crown
+            // Bottom crown edge
             vertices.push(x, 0, z);
-            normals.push(x, 0, z);
+            normals.push(0, -1, 0);
+            vertexIndex++;
             
-            // Top crown
+            // Top crown edge
             vertices.push(x, crownHeight, z);
-            normals.push(x, 0, z);
+            normals.push(0, 1, 0);
+            vertexIndex++;
         }
         
-        // Brim vertices
-        for (let i = 0; i <= segments; i++) {
+        // Crown side vertices (for proper side normals)
+        const crownSideStart = vertexIndex;
+        for (let i = 0; i < segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            const x = Math.cos(angle) * crownRadius;
+            const z = Math.sin(angle) * crownRadius;
+            const normalX = Math.cos(angle);
+            const normalZ = Math.sin(angle);
+            
+            // Bottom crown side
+            vertices.push(x, 0, z);
+            normals.push(normalX, 0, normalZ);
+            vertexIndex++;
+            
+            // Top crown side
+            vertices.push(x, crownHeight, z);
+            normals.push(normalX, 0, normalZ);
+            vertexIndex++;
+        }
+        
+        // Brim vertices (inner and outer edges)
+        const brimInnerStart = vertexIndex;
+        for (let i = 0; i < segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            const x = Math.cos(angle) * crownRadius;
+            const z = Math.sin(angle) * crownRadius;
+            
+            // Inner brim edge
+            vertices.push(x, 0, z);
+            normals.push(0, 1, 0);
+            vertexIndex++;
+        }
+        
+        const brimOuterStart = vertexIndex;
+        for (let i = 0; i < segments; i++) {
             const angle = (i / segments) * Math.PI * 2;
             const x = Math.cos(angle) * brimRadius;
             const z = Math.sin(angle) * brimRadius;
             
+            // Outer brim edge
             vertices.push(x, 0, z);
             normals.push(0, 1, 0);
+            vertexIndex++;
         }
         
         // Generate indices
+        
+        // Crown bottom faces (triangle fan from center)
         for (let i = 0; i < segments; i++) {
-            const base = i * 2;
-            const next = ((i + 1) % segments) * 2;
+            const current = crownBottomStart + i * 2;
+            const next = crownBottomStart + ((i + 1) % segments) * 2;
             
-            // Crown side faces
-            indices.push(base, base + 1, next);
-            indices.push(base + 1, next + 1, next);
+            indices.push(bottomCenterIndex, next, current);
         }
+        
+        // Crown top faces (triangle fan from center)
+        for (let i = 0; i < segments; i++) {
+            const current = crownBottomStart + i * 2 + 1;
+            const next = crownBottomStart + ((i + 1) % segments) * 2 + 1;
+            
+            indices.push(topCenterIndex, current, next);
+        }
+        
+        // Crown side faces
+        for (let i = 0; i < segments; i++) {
+            const currentBottom = crownSideStart + i * 2;
+            const currentTop = crownSideStart + i * 2 + 1;
+            const nextBottom = crownSideStart + ((i + 1) % segments) * 2;
+            const nextTop = crownSideStart + ((i + 1) % segments) * 2 + 1;
+            
+            // Two triangles per side face
+            indices.push(currentBottom, currentTop, nextBottom);
+            indices.push(currentTop, nextTop, nextBottom);
+        }
+        
+        // Brim faces
+        for (let i = 0; i < segments; i++) {
+            const currentInner = brimInnerStart + i;
+            const currentOuter = brimOuterStart + i;
+            const nextInner = brimInnerStart + ((i + 1) % segments);
+            const nextOuter = brimOuterStart + ((i + 1) % segments);
+            
+            // Two triangles per brim segment
+            indices.push(currentInner, currentOuter, nextInner);
+            indices.push(currentOuter, nextOuter, nextInner);
+        }
+        
+        console.log('Generated vertices:', vertices.length, 'normals:', normals.length, 'indices:', indices.length);
         
         return { vertices, normals, indices };
     }
@@ -240,6 +341,11 @@ class SimpleWebGL {
         gl.clearColor(0.94, 0.94, 0.94, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         
+        if (!mesh) {
+            console.log('No mesh to render');
+            return;
+        }
+        
         // Use shader program
         gl.useProgram(this.program);
         
@@ -254,6 +360,12 @@ class SimpleWebGL {
         const normalMatrix = this.createNormalMatrix(modelViewMatrix);
         
         const mvpMatrix = this.multiplyMatrices(projectionMatrix, modelViewMatrix);
+        
+        // Debug: Log matrices occasionally
+        if (Math.floor(time) % 3 === 0 && Math.floor(time * 10) % 10 === 0) {
+            console.log('MVP Matrix:', mvpMatrix);
+            console.log('Mesh color:', mesh.color);
+        }
         
         // Set uniforms
         gl.uniformMatrix4fv(this.uniforms.matrix, false, mvpMatrix);
@@ -274,34 +386,32 @@ class SimpleWebGL {
         // Bind index buffer and draw
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
         gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+        
+        // Check for WebGL errors
+        const error = gl.getError();
+        if (error !== gl.NO_ERROR) {
+            console.error('WebGL error:', error);
+        }
     }
     
     createPerspectiveMatrix(fieldOfView, aspect, near, far) {
-        const f = Math.tan(Math.PI * 0.5 - 0.5 * fieldOfView);
-        const rangeInv = 1.0 / (near - far);
-        
+        // Simplified orthographic projection for testing
         return new Float32Array([
-            f / aspect, 0, 0, 0,
-            0, f, 0, 0,
-            0, 0, (near + far) * rangeInv, -1,
-            0, 0, near * far * rangeInv * 2, 0
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
         ]);
     }
     
     createModelViewMatrix(time) {
-        const matrix = new Float32Array(16);
-        
-        // Identity matrix
-        matrix[0] = 1; matrix[5] = 1; matrix[10] = 1; matrix[15] = 1;
-        
-        // Translate
-        matrix[12] = 0; // x
-        matrix[13] = -0.5; // y
-        matrix[14] = -5; // z
-        
-        // Apply rotation
-        const rotationMatrix = this.createRotationMatrix(this.rotation);
-        return this.multiplyMatrices(matrix, rotationMatrix);
+        // Simplified identity matrix with simple translation
+        return new Float32Array([
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, -2, 1  // Just translate back by 2 units
+        ]);
     }
     
     createRotationMatrix(angle) {
