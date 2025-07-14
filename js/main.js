@@ -233,6 +233,11 @@ class HatConfigurator {
         this.scene.add(hatGroup);
         this.currentHat = hatGroup;
         
+        // Trigger buffer update in renderer
+        if (this.renderer && this.renderer.updateHatConfiguration) {
+            this.renderer.updateHatConfiguration();
+        }
+        
         console.log('Hat created and added to scene');
     }
     
