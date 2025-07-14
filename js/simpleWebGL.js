@@ -69,7 +69,7 @@ class SimpleWebGL {
         // Set up viewport
         gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         gl.enable(gl.DEPTH_TEST);
-        gl.enable(gl.CULL_FACE);
+        gl.disable(gl.CULL_FACE);  // Disable face culling to see if that's the issue
         
         console.log('WebGL viewport set to:', this.canvas.width, 'x', this.canvas.height);
         
@@ -125,12 +125,12 @@ class SimpleWebGL {
     createHatGeometry(type, crownHeight, brimSize, color) {
         console.log('Creating hat geometry:', type, crownHeight, brimSize);
         
-        // For debugging, create a simple triangle that should be visible
-        const debugGeometry = {
+        // Create a simple test triangle to debug rendering
+        const testGeometry = {
             vertices: [
-                0.0, 0.8, 0.0,   // Top vertex
-                -0.8, -0.8, 0.0, // Bottom left
-                0.8, -0.8, 0.0   // Bottom right
+                0.0, 0.5, 0.0,   // Top vertex
+                -0.5, -0.5, 0.0, // Bottom left
+                0.5, -0.5, 0.0   // Bottom right
             ],
             normals: [
                 0.0, 0.0, 1.0,   // Top vertex normal
@@ -142,9 +142,9 @@ class SimpleWebGL {
             ]
         };
         
-        console.log('Using debug triangle geometry instead of hat for testing');
-        const mesh = this.createMesh(debugGeometry, color);
-        console.log('Created debug triangle mesh with', debugGeometry.vertices.length / 3, 'vertices and', debugGeometry.indices.length, 'indices');
+        console.log('Using test triangle geometry for debugging');
+        const mesh = this.createMesh(testGeometry, color);
+        console.log('Created test triangle mesh with', testGeometry.vertices.length / 3, 'vertices and', testGeometry.indices.length, 'indices');
         return mesh;
     }
     
@@ -351,6 +351,18 @@ class SimpleWebGL {
             z: [minZ, maxZ]
         });
         
+        // Debug: Check if geometry is reasonable size
+        const sizeX = maxX - minX;
+        const sizeY = maxY - minY;
+        const sizeZ = maxZ - minZ;
+        console.log('Geometry size:', { x: sizeX, y: sizeY, z: sizeZ });
+        
+        // Check if geometry is centered around origin
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const centerZ = (minZ + maxZ) / 2;
+        console.log('Geometry center:', { x: centerX, y: centerY, z: centerZ });
+        
         // Create buffers
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -402,11 +414,13 @@ class SimpleWebGL {
         
         // Debug: Log matrices occasionally
         if (Math.floor(time) % 3 === 0 && Math.floor(time * 10) % 10 === 0) {
-            console.log('Projection Matrix:', projectionMatrix);
-            console.log('ModelView Matrix:', modelViewMatrix);
-            console.log('MVP Matrix:', mvpMatrix);
+            console.log('Projection Matrix:', Array.from(projectionMatrix));
+            console.log('ModelView Matrix:', Array.from(modelViewMatrix));
+            console.log('MVP Matrix:', Array.from(mvpMatrix));
             console.log('Mesh index count:', mesh.indexCount);
             console.log('Mesh color:', mesh.color);
+            console.log('Canvas dimensions:', this.canvas.width, 'x', this.canvas.height);
+            console.log('Viewport:', gl.getParameter(gl.VIEWPORT));
         }
         
         // Set uniforms
@@ -445,6 +459,16 @@ class SimpleWebGL {
         error = gl.getError();
         if (error !== gl.NO_ERROR) {
             console.error('WebGL error after drawing:', error);
+            if (error === gl.INVALID_OPERATION) {
+                console.error('INVALID_OPERATION: Check if uniforms are set correctly');
+            } else if (error === gl.INVALID_VALUE) {
+                console.error('INVALID_VALUE: Check buffer sizes and attribute locations');
+            }
+        } else {
+            // Success - log occasionally for debugging
+            if (Math.floor(time) % 5 === 0 && Math.floor(time * 10) % 10 === 0) {
+                console.log('Drawing successful - rendered', mesh.indexCount, 'triangles');
+            }
         }
     }
     
@@ -456,25 +480,64 @@ class SimpleWebGL {
             f / aspect, 0, 0, 0,
             0, f, 0, 0,
             0, 0, (near + far) * rangeInv, -1,
-            0, 0, 2 * near * far * rangeInv, 0
+            0, 0, near * far * rangeInv * 2, 0
         ]);
     }
     
     createModelViewMatrix(time) {
-        // Create a simple view matrix - camera at (0, 0, 3) looking at origin
-        const rotationY = this.rotation;
-        const cos = Math.cos(rotationY);
-        const sin = Math.sin(rotationY);
-        
-        // First apply rotation around Y-axis, then translate back
+        // Very simple camera - just move back on Z axis
         return new Float32Array([
-            cos, 0, sin, 0,
+            1, 0, 0, 0,
             0, 1, 0, 0,
-            -sin, 0, cos, 0,
-            0, 0, -3, 1  // Camera positioned at z=3 looking at origin
+            0, 0, 1, 0,
+            0, 0, -3, 1  // Camera positioned at z=-3 looking towards origin
         ]);
     }
     
+    createLookAtMatrix(cameraPos, target, up) {
+        const [eyeX, eyeY, eyeZ] = cameraPos;
+        const [centerX, centerY, centerZ] = target;
+        const [upX, upY, upZ] = up;
+        
+        // Calculate forward vector (from eye to target)
+        const fx = centerX - eyeX;
+        const fy = centerY - eyeY;
+        const fz = centerZ - eyeZ;
+        
+        // Normalize forward vector
+        const fLength = Math.sqrt(fx * fx + fy * fy + fz * fz);
+        const forwardX = fx / fLength;
+        const forwardY = fy / fLength;
+        const forwardZ = fz / fLength;
+        
+        // Calculate right vector (cross product of forward and up)
+        const rightX = forwardY * upZ - forwardZ * upY;
+        const rightY = forwardZ * upX - forwardX * upZ;
+        const rightZ = forwardX * upY - forwardY * upX;
+        
+        // Normalize right vector
+        const rLength = Math.sqrt(rightX * rightX + rightY * rightY + rightZ * rightZ);
+        const normalizedRightX = rightX / rLength;
+        const normalizedRightY = rightY / rLength;
+        const normalizedRightZ = rightZ / rLength;
+        
+        // Calculate up vector (cross product of right and forward)
+        const upNewX = normalizedRightY * forwardZ - normalizedRightZ * forwardY;
+        const upNewY = normalizedRightZ * forwardX - normalizedRightX * forwardZ;
+        const upNewZ = normalizedRightX * forwardY - normalizedRightY * forwardX;
+        
+        // Create look-at matrix
+        return new Float32Array([
+            normalizedRightX, upNewX, -forwardX, 0,
+            normalizedRightY, upNewY, -forwardY, 0,
+            normalizedRightZ, upNewZ, -forwardZ, 0,
+            -(normalizedRightX * eyeX + normalizedRightY * eyeY + normalizedRightZ * eyeZ),
+            -(upNewX * eyeX + upNewY * eyeY + upNewZ * eyeZ),
+            -(-forwardX * eyeX + -forwardY * eyeY + -forwardZ * eyeZ),
+            1
+        ]);
+    }
+
     createRotationMatrix(angle) {
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
