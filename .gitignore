@@ -1,0 +1,53 @@
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
+
+# Build artifacts
+dist/
+build/
+node_modules/
+
+# Local server files
+.cache/
+
+# OS generated files
+.DS_Store?
+ehthumbs.db
+Icon?
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Test files
+test/
+tests/
+coverage/
+
+# Development tools
+.env
+.env.local
+.env.production
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# IDE configuration
+.settings/
+.project
+.classpath
