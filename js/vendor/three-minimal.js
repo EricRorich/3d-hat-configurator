@@ -90,9 +90,17 @@ window.THREE = {
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.enable(gl.DEPTH_TEST);
             
-            // Update hat color if scene has children (hat objects)
+            // Update hat color and configuration from scene
+            this.updateHatFromScene(scene);
+            
+            // Simple rendering for demonstration
+            this.renderSimpleHat(gl, scene, camera);
+        };
+        
+        this.updateHatFromScene = function(scene) {
+            // Update hat color and configuration from scene
             if (scene && scene.children && scene.children.length > 0) {
-                const hatGroup = scene.children[scene.children.length - 1]; // Get the last added object (the hat)
+                const hatGroup = scene.children[scene.children.length - 1];
                 if (hatGroup && hatGroup.children && hatGroup.children.length > 0) {
                     const hatMesh = hatGroup.children[0];
                     if (hatMesh && hatMesh.material && hatMesh.material.color) {
@@ -109,88 +117,169 @@ window.THREE = {
                     }
                 }
             }
-            
-            // Simple rendering for demonstration
-            this.renderSimpleHat(gl, scene, camera);
         };
         
         this.renderSimpleHat = function(gl, scene, camera) {
-            // Create a simple hat-like shape using basic WebGL
-            const vertices = [
-                // Crown (octagonal cylinder)
-                0.0, 0.0, 0.0,    // 0: Center bottom
-                0.0, 1.0, 0.0,    // 1: Center top
-                
-                // Bottom ring (8 vertices)
-                0.8, 0.0, 0.0,    // 2: E
-                0.57, 0.0, 0.57,  // 3: SE
-                0.0, 0.0, 0.8,    // 4: S
-                -0.57, 0.0, 0.57, // 5: SW
-                -0.8, 0.0, 0.0,   // 6: W
-                -0.57, 0.0, -0.57,// 7: NW
-                0.0, 0.0, -0.8,   // 8: N
-                0.57, 0.0, -0.57, // 9: NE
-                
-                // Top ring (8 vertices)
-                0.8, 1.0, 0.0,    // 10: E
-                0.57, 1.0, 0.57,  // 11: SE
-                0.0, 1.0, 0.8,    // 12: S
-                -0.57, 1.0, 0.57, // 13: SW
-                -0.8, 1.0, 0.0,   // 14: W
-                -0.57, 1.0, -0.57,// 15: NW
-                0.0, 1.0, -0.8,   // 16: N
-                0.57, 1.0, -0.57, // 17: NE
-                
-                // Brim ring (8 vertices)
-                1.5, 0.0, 0.0,    // 18: E
-                1.06, 0.0, 1.06,  // 19: SE
-                0.0, 0.0, 1.5,    // 20: S
-                -1.06, 0.0, 1.06, // 21: SW
-                -1.5, 0.0, 0.0,   // 22: W
-                -1.06, 0.0, -1.06,// 23: NW
-                0.0, 0.0, -1.5,   // 24: N
-                1.06, 0.0, -1.06, // 25: NE
-            ];
+            // Create a simple, clearly visible hat using basic triangles
+            const time = performance.now() * 0.001;
             
-            const indices = [
-                // Crown bottom face (octagon)
-                0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 6,
-                0, 6, 7,  0, 7, 8,  0, 8, 9,  0, 9, 2,
+            // Define a simple hat shape - crown and brim
+            const vertices = new Float32Array([
+                // Crown (hexagon)
+                0.0, 0.8, 0.0,    // Top center
+                0.5, 0.0, 0.0,    // Bottom right
+                0.25, 0.0, 0.43,  // Bottom right-back
+                -0.25, 0.0, 0.43, // Bottom left-back
+                -0.5, 0.0, 0.0,   // Bottom left
+                -0.25, 0.0, -0.43,// Bottom left-front
+                0.25, 0.0, -0.43, // Bottom right-front
                 
-                // Crown top face (octagon)
-                1, 11, 10,  1, 12, 11,  1, 13, 12,  1, 14, 13,
-                1, 15, 14,  1, 16, 15,  1, 17, 16,  1, 10, 17,
-                
-                // Crown sides (8 rectangular faces)
-                2, 10, 3,   3, 10, 11,  // E-SE
-                3, 11, 4,   4, 11, 12,  // SE-S
-                4, 12, 5,   5, 12, 13,  // S-SW
-                5, 13, 6,   6, 13, 14,  // SW-W
-                6, 14, 7,   7, 14, 15,  // W-NW
-                7, 15, 8,   8, 15, 16,  // NW-N
-                8, 16, 9,   9, 16, 17,  // N-NE
-                9, 17, 2,   2, 17, 10,  // NE-E
-                
-                // Brim (8 segments)
-                2, 18, 3,   3, 18, 19,  // E-SE
-                3, 19, 4,   4, 19, 20,  // SE-S
-                4, 20, 5,   5, 20, 21,  // S-SW
-                5, 21, 6,   6, 21, 22,  // SW-W
-                6, 22, 7,   7, 22, 23,  // W-NW
-                7, 23, 8,   8, 23, 24,  // NW-N
-                8, 24, 9,   9, 24, 25,  // N-NE
-                9, 25, 2,   2, 25, 18,  // NE-E
-            ];
+                // Brim (larger hexagon)
+                0.8, 0.0, 0.0,    // Right
+                0.4, 0.0, 0.69,   // Right-back
+                -0.4, 0.0, 0.69,  // Left-back
+                -0.8, 0.0, 0.0,   // Left
+                -0.4, 0.0, -0.69, // Left-front
+                0.4, 0.0, -0.69   // Right-front
+            ]);
             
-            if (!this.program) {
-                this.program = this.createShaderProgram(gl);
+            const indices = new Uint16Array([
+                // Crown faces
+                0, 1, 2,  0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 6,  0, 6, 1,
+                
+                // Crown sides
+                1, 2, 7,  2, 7, 8,  2, 3, 8,  3, 8, 9,  3, 4, 9,  4, 9, 10,
+                4, 5, 10, 5, 10, 11, 5, 6, 11, 6, 11, 12, 6, 1, 12, 1, 12, 7,
+                
+                // Brim
+                1, 7, 2,  2, 7, 8,  2, 8, 3,  3, 8, 9,  3, 9, 4,  4, 9, 10,
+                4, 10, 5, 5, 10, 11, 5, 11, 6, 6, 11, 12, 6, 12, 1, 1, 12, 7
+            ]);
+            
+            if (!this.hatProgram) {
+                this.hatProgram = this.createSimpleHatProgram(gl);
             }
             
-            if (!this.buffers) {
-                this.buffers = this.createBuffers(gl, vertices, indices);
+            if (!this.hatBuffers) {
+                this.hatBuffers = this.setupHatBuffers(gl, vertices, indices);
             }
             
-            this.drawHat(gl, this.program, this.buffers, indices.length);
+            this.drawSimpleHat(gl, this.hatProgram, this.hatBuffers, indices.length, time);
+        };
+        
+        this.createSimpleHatProgram = function(gl) {
+            const vertexShaderSource = `
+                attribute vec3 a_position;
+                uniform mat4 u_matrix;
+                varying vec3 v_position;
+                void main() {
+                    v_position = a_position;
+                    gl_Position = u_matrix * vec4(a_position, 1.0);
+                }
+            `;
+            
+            const fragmentShaderSource = `
+                precision mediump float;
+                uniform vec3 u_color;
+                varying vec3 v_position;
+                void main() {
+                    // Add simple shading based on height
+                    float shade = v_position.y * 0.3 + 0.7;
+                    vec3 shadedColor = u_color * shade;
+                    gl_FragColor = vec4(shadedColor, 1.0);
+                }
+            `;
+            
+            const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            
+            if (!vertexShader || !fragmentShader) {
+                console.error('Failed to create shaders');
+                return null;
+            }
+            
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Failed to link program:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            
+            return program;
+        };
+        
+        this.setupHatBuffers = function(gl, vertices, indices) {
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+            
+            const indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            
+            return { position: positionBuffer, indices: indexBuffer };
+        };
+        
+        this.drawSimpleHat = function(gl, program, buffers, indexCount, time) {
+            gl.useProgram(program);
+            
+            // Create a simple perspective projection
+            const canvas = gl.canvas;
+            const aspect = canvas.width / canvas.height;
+            const fov = 45 * Math.PI / 180;
+            const near = 0.1;
+            const far = 100.0;
+            const f = 1.0 / Math.tan(fov / 2);
+            
+            // Perspective matrix
+            const perspective = [
+                f / aspect, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far + near) / (near - far), -1,
+                0, 0, (2 * far * near) / (near - far), 0
+            ];
+            
+            // View matrix - camera positioned back and looking at origin
+            const view = [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, -0.3, -3, 1
+            ];
+            
+            // Model matrix - rotate over time
+            const rotation = time * 0.5;
+            const cos = Math.cos(rotation);
+            const sin = Math.sin(rotation);
+            const model = [
+                cos, 0, sin, 0,
+                0, 1, 0, 0,
+                -sin, 0, cos, 0,
+                0, 0, 0, 1
+            ];
+            
+            // Combine matrices
+            const mvp = this.multiplyMatrices(perspective, this.multiplyMatrices(view, model));
+            
+            // Set uniforms
+            const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
+            gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvp));
+            
+            const colorLocation = gl.getUniformLocation(program, 'u_color');
+            gl.uniform3fv(colorLocation, this.currentHatColor);
+            
+            // Set up vertex attributes
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+            gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(positionLocation);
+            
+            // Draw
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+            gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
         };
         
         this.createShaderProgram = function(gl) {
