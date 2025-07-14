@@ -83,10 +83,13 @@ window.THREE = {
             const canvas = this.domElement;
             const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
             
-            if (!gl) return;
+            if (!gl) {
+                console.error('WebGL not supported');
+                return;
+            }
             
-            // Clear canvas
-            gl.clearColor(0.94, 0.94, 0.94, 1.0);
+            // Clear canvas with a different color to verify it's working
+            gl.clearColor(0.2, 0.3, 0.4, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.enable(gl.DEPTH_TEST);
             
@@ -119,41 +122,150 @@ window.THREE = {
             }
         };
         
+        this.renderGridHelper = function(gl, scene, camera) {
+            // Create a simple grid floor for better orientation
+            if (!this.gridProgram) {
+                this.gridProgram = this.createGridProgram(gl);
+            }
+            
+            if (!this.gridBuffers) {
+                this.gridBuffers = this.setupGridBuffers(gl);
+            }
+            
+            this.drawGrid(gl, this.gridProgram, this.gridBuffers, camera);
+        };
+        
+        this.createGridProgram = function(gl) {
+            const vertexShaderSource = `
+                attribute vec3 a_position;
+                uniform mat4 u_matrix;
+                void main() {
+                    gl_Position = u_matrix * vec4(a_position, 1.0);
+                }
+            `;
+            
+            const fragmentShaderSource = `
+                precision mediump float;
+                void main() {
+                    gl_FragColor = vec4(0.5, 0.5, 0.5, 0.3);
+                }
+            `;
+            
+            const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            
+            if (!vertexShader || !fragmentShader) {
+                return null;
+            }
+            
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Failed to link grid program:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            
+            return program;
+        };
+        
+        this.setupGridBuffers = function(gl) {
+            const gridVertices = [];
+            const gridSize = 10;
+            const gridSpacing = 0.5;
+            
+            // Create grid lines
+            for (let i = -gridSize; i <= gridSize; i++) {
+                const pos = i * gridSpacing;
+                // Horizontal lines
+                gridVertices.push(-gridSize * gridSpacing, -1, pos);
+                gridVertices.push(gridSize * gridSpacing, -1, pos);
+                // Vertical lines
+                gridVertices.push(pos, -1, -gridSize * gridSpacing);
+                gridVertices.push(pos, -1, gridSize * gridSpacing);
+            }
+            
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(gridVertices), gl.STATIC_DRAW);
+            
+            return { position: positionBuffer, count: gridVertices.length / 3 };
+        };
+        
+        this.drawGrid = function(gl, program, buffers, camera) {
+            if (!program) return;
+            
+            gl.useProgram(program);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            
+            // Create perspective and view matrices
+            const matrices = this.createViewMatrices(camera);
+            const mvpMatrix = this.multiplyMatrices(matrices.perspective, matrices.view);
+            
+            const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
+            gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvpMatrix));
+            
+            // Set up position attribute
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+            gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(positionLocation);
+            
+            // Draw grid lines
+            gl.drawArrays(gl.LINES, 0, buffers.count);
+            
+            gl.disable(gl.BLEND);
+        };
+        
+        this.createViewMatrices = function(camera) {
+            const canvas = this.domElement;
+            const aspect = canvas.width / canvas.height;
+            const fov = 45 * Math.PI / 180;
+            const near = 0.1;
+            const far = 100.0;
+            const f = 1.0 / Math.tan(fov / 2);
+            
+            // Perspective matrix
+            const perspective = [
+                f / aspect, 0, 0, 0,
+                0, f, 0, 0,
+                0, 0, (far + near) / (near - far), -1,
+                0, 0, (2 * far * near) / (near - far), 0
+            ];
+            
+            // Use camera position from main.js if available, otherwise use better default
+            const cameraX = (camera && camera.position) ? camera.position.x : 0;
+            const cameraY = (camera && camera.position) ? camera.position.y : 2;
+            const cameraZ = (camera && camera.position) ? camera.position.z : 5;
+            
+            // View matrix - position camera to better frame the hat
+            const view = [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                -cameraX, -cameraY, -cameraZ, 1
+            ];
+            
+            return { perspective, view };
+        };
+        
         this.renderSimpleHat = function(gl, scene, camera) {
             // Create a simple, clearly visible hat using basic triangles
             const time = performance.now() * 0.001;
             
-            // Define a simple hat shape - crown and brim
+            // Define a much simpler hat shape - just a basic triangle for testing
             const vertices = new Float32Array([
-                // Crown (hexagon)
-                0.0, 0.8, 0.0,    // Top center
-                0.5, 0.0, 0.0,    // Bottom right
-                0.25, 0.0, 0.43,  // Bottom right-back
-                -0.25, 0.0, 0.43, // Bottom left-back
-                -0.5, 0.0, 0.0,   // Bottom left
-                -0.25, 0.0, -0.43,// Bottom left-front
-                0.25, 0.0, -0.43, // Bottom right-front
-                
-                // Brim (larger hexagon)
-                0.8, 0.0, 0.0,    // Right
-                0.4, 0.0, 0.69,   // Right-back
-                -0.4, 0.0, 0.69,  // Left-back
-                -0.8, 0.0, 0.0,   // Left
-                -0.4, 0.0, -0.69, // Left-front
-                0.4, 0.0, -0.69   // Right-front
+                // Simple triangle
+                0.0, 0.5, 0.0,    // Top
+                -0.5, -0.5, 0.0,  // Bottom left
+                0.5, -0.5, 0.0    // Bottom right
             ]);
             
             const indices = new Uint16Array([
-                // Crown faces
-                0, 1, 2,  0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 6,  0, 6, 1,
-                
-                // Crown sides
-                1, 2, 7,  2, 7, 8,  2, 3, 8,  3, 8, 9,  3, 4, 9,  4, 9, 10,
-                4, 5, 10, 5, 10, 11, 5, 6, 11, 6, 11, 12, 6, 1, 12, 1, 12, 7,
-                
-                // Brim
-                1, 7, 2,  2, 7, 8,  2, 8, 3,  3, 8, 9,  3, 9, 4,  4, 9, 10,
-                4, 10, 5, 5, 10, 11, 5, 11, 6, 6, 11, 12, 6, 12, 1, 1, 12, 7
+                0, 1, 2
             ]);
             
             if (!this.hatProgram) {
@@ -164,7 +276,9 @@ window.THREE = {
                 this.hatBuffers = this.setupHatBuffers(gl, vertices, indices);
             }
             
-            this.drawSimpleHat(gl, this.hatProgram, this.hatBuffers, indices.length, time);
+            if (this.hatProgram && this.hatBuffers) {
+                this.drawSimpleHat(gl, this.hatProgram, this.hatBuffers, indices.length, time, camera);
+            }
         };
         
         this.createSimpleHatProgram = function(gl) {
@@ -172,8 +286,11 @@ window.THREE = {
                 attribute vec3 a_position;
                 uniform mat4 u_matrix;
                 varying vec3 v_position;
+                varying vec3 v_normal;
                 void main() {
                     v_position = a_position;
+                    // Simple normal calculation
+                    v_normal = normalize(a_position);
                     gl_Position = u_matrix * vec4(a_position, 1.0);
                 }
             `;
@@ -182,11 +299,21 @@ window.THREE = {
                 precision mediump float;
                 uniform vec3 u_color;
                 varying vec3 v_position;
+                varying vec3 v_normal;
                 void main() {
-                    // Add simple shading based on height
-                    float shade = v_position.y * 0.3 + 0.7;
-                    vec3 shadedColor = u_color * shade;
-                    gl_FragColor = vec4(shadedColor, 1.0);
+                    // Improved lighting with ambient and directional light
+                    vec3 lightDirection = normalize(vec3(0.5, 0.8, 0.6));
+                    vec3 ambient = vec3(0.4, 0.4, 0.4);
+                    
+                    // Diffuse lighting
+                    float diffuse = max(dot(v_normal, lightDirection), 0.0);
+                    
+                    // Simple height-based shading for better definition
+                    float heightShade = (v_position.y + 1.0) * 0.1 + 0.9;
+                    
+                    // Combine lighting
+                    vec3 finalColor = u_color * (ambient + diffuse * 0.6) * heightShade;
+                    gl_FragColor = vec4(finalColor, 1.0);
                 }
             `;
             
@@ -223,53 +350,27 @@ window.THREE = {
             return { position: positionBuffer, indices: indexBuffer };
         };
         
-        this.drawSimpleHat = function(gl, program, buffers, indexCount, time) {
+        this.drawSimpleHat = function(gl, program, buffers, indexCount, time, camera) {
             gl.useProgram(program);
             
-            // Create a simple perspective projection
-            const canvas = gl.canvas;
-            const aspect = canvas.width / canvas.height;
-            const fov = 45 * Math.PI / 180;
-            const near = 0.1;
-            const far = 100.0;
-            const f = 1.0 / Math.tan(fov / 2);
+            // Set viewport
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
             
-            // Perspective matrix
-            const perspective = [
-                f / aspect, 0, 0, 0,
-                0, f, 0, 0,
-                0, 0, (far + near) / (near - far), -1,
-                0, 0, (2 * far * near) / (near - far), 0
-            ];
-            
-            // View matrix - camera positioned back and looking at origin
-            const view = [
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, -0.3, -3, 1
-            ];
-            
-            // Model matrix - rotate over time
-            const rotation = time * 0.5;
-            const cos = Math.cos(rotation);
-            const sin = Math.sin(rotation);
-            const model = [
-                cos, 0, sin, 0,
-                0, 1, 0, 0,
-                -sin, 0, cos, 0,
+            // Simple orthographic projection for testing
+            const scale = 0.5;
+            const mvp = [
+                scale, 0, 0, 0,
+                0, scale, 0, 0,
+                0, 0, scale, 0,
                 0, 0, 0, 1
             ];
-            
-            // Combine matrices
-            const mvp = this.multiplyMatrices(perspective, this.multiplyMatrices(view, model));
             
             // Set uniforms
             const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
             gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvp));
             
             const colorLocation = gl.getUniformLocation(program, 'u_color');
-            gl.uniform3fv(colorLocation, this.currentHatColor);
+            gl.uniform3fv(colorLocation, [1.0, 0.0, 0.0]); // Red for visibility
             
             // Set up vertex attributes
             const positionLocation = gl.getAttribLocation(program, 'a_position');
@@ -527,6 +628,16 @@ window.THREE = {
         };
         
         this.dispose = function() {};
+    },
+    
+    // GridHelper class for floor reference
+    GridHelper: function(size, divisions) {
+        this.size = size || 10;
+        this.divisions = divisions || 10;
+        this.position = { x: 0, y: 0, z: 0, set: function(x, y, z) { this.x = x; this.y = y; this.z = z; } };
+        this.rotation = { x: 0, y: 0, z: 0 };
+        this.scale = { x: 1, y: 1, z: 1 };
+        this.isGridHelper = true;
     }
 };
 

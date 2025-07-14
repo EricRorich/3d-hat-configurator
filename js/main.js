@@ -55,6 +55,11 @@ class HatConfigurator {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(CONFIG.SCENE.backgroundColor);
         
+        // Add GridHelper for floor reference
+        const gridHelper = new THREE.GridHelper(10, 20);
+        gridHelper.position.set(0, -1, 0);
+        this.scene.add(gridHelper);
+        
         // Create camera
         const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
         this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
