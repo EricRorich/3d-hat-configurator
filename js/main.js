@@ -1,17 +1,17 @@
-// Main application file for 3D Hat Configurator
+// Main application file for 3D Hat Configurator using THREE.js
 class HatConfigurator {
     constructor() {
-        this.webgl = null;
         this.canvas = null;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
         this.uiController = null;
         this.currentHat = null;
         this.currentConfig = { ...CONFIG.DEFAULT_HAT };
         this.animationId = null;
         this.isInitialized = false;
-        this.time = 0;
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.isDragging = false;
+        this.hatGeometry = null;
         
         this.init();
     }
@@ -20,7 +20,9 @@ class HatConfigurator {
     async init() {
         try {
             this.setupCanvas();
-            this.setupWebGL();
+            this.setupThreeJS();
+            this.setupLighting();
+            this.setupControls();
             this.setupUI();
             this.setupEventListeners();
             
@@ -43,13 +45,95 @@ class HatConfigurator {
             throw new Error('Canvas element not found');
         }
         
-        // Set canvas size
+        // Set initial canvas size
         this.resizeCanvas();
     }
     
-    // Setup WebGL
-    setupWebGL() {
-        this.webgl = new SimpleWebGL(this.canvas);
+    // Setup THREE.js components
+    setupThreeJS() {
+        // Create scene
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(CONFIG.SCENE.backgroundColor);
+        
+        // Create camera
+        const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
+        this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+        this.camera.position.set(
+            CONFIG.SCENE.cameraPosition.x,
+            CONFIG.SCENE.cameraPosition.y,
+            CONFIG.SCENE.cameraPosition.z
+        );
+        
+        // Create renderer
+        this.renderer = new THREE.WebGLRenderer({ 
+            canvas: this.canvas,
+            antialias: true,
+            alpha: true
+        });
+        this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // Initialize hat geometry helper
+        this.hatGeometry = new HatGeometry();
+        
+        console.log('THREE.js scene, camera, and renderer initialized');
+    }
+    
+    // Setup lighting
+    setupLighting() {
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(
+            CONFIG.SCENE.ambientLightColor,
+            CONFIG.SCENE.ambientLightIntensity
+        );
+        this.scene.add(ambientLight);
+        
+        // Directional light
+        const directionalLight = new THREE.DirectionalLight(
+            CONFIG.SCENE.directionalLightColor,
+            CONFIG.SCENE.directionalLightIntensity
+        );
+        directionalLight.position.set(
+            CONFIG.SCENE.directionalLightPosition.x,
+            CONFIG.SCENE.directionalLightPosition.y,
+            CONFIG.SCENE.directionalLightPosition.z
+        );
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        this.scene.add(directionalLight);
+        
+        // Add a subtle fill light
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-5, 2, -5);
+        this.scene.add(fillLight);
+        
+        console.log('Lighting setup complete');
+    }
+    
+    // Setup controls
+    setupControls() {
+        this.controls = new THREE.OrbitControls(this.camera, this.canvas);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.enableZoom = true;
+        this.controls.enablePan = false;
+        this.controls.minDistance = 2;
+        this.controls.maxDistance = 10;
+        this.controls.maxPolarAngle = Math.PI / 2;
+        
+        // Set target to look at the hat
+        this.controls.target.set(
+            CONFIG.SCENE.cameraLookAt.x,
+            CONFIG.SCENE.cameraLookAt.y,
+            CONFIG.SCENE.cameraLookAt.z
+        );
+        
+        console.log('Orbit controls initialized');
     }
     
     // Setup UI controller
@@ -68,55 +152,6 @@ class HatConfigurator {
             this.handleResize();
         });
         
-        // Handle mouse events for rotation
-        this.canvas.addEventListener('mousedown', (e) => {
-            this.isDragging = true;
-            this.mouseX = e.clientX;
-            this.mouseY = e.clientY;
-        });
-        
-        this.canvas.addEventListener('mousemove', (e) => {
-            if (this.isDragging) {
-                const deltaX = e.clientX - this.mouseX;
-                this.webgl.updateRotation(deltaX * 0.01);
-                this.mouseX = e.clientX;
-                this.mouseY = e.clientY;
-            }
-        });
-        
-        this.canvas.addEventListener('mouseup', () => {
-            this.isDragging = false;
-        });
-        
-        this.canvas.addEventListener('mouseleave', () => {
-            this.isDragging = false;
-        });
-        
-        // Handle touch events for mobile
-        this.canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const touch = e.touches[0];
-            this.isDragging = true;
-            this.mouseX = touch.clientX;
-            this.mouseY = touch.clientY;
-        });
-        
-        this.canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (this.isDragging && e.touches.length > 0) {
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - this.mouseX;
-                this.webgl.updateRotation(deltaX * 0.01);
-                this.mouseX = touch.clientX;
-                this.mouseY = touch.clientY;
-            }
-        });
-        
-        this.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            this.isDragging = false;
-        });
-        
         // Handle visibility change
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
@@ -130,8 +165,11 @@ class HatConfigurator {
     // Handle window resize
     handleResize() {
         this.resizeCanvas();
-        if (this.webgl) {
-            this.webgl.resize(this.canvas.width, this.canvas.height);
+        
+        if (this.camera && this.renderer) {
+            this.camera.aspect = this.canvas.clientWidth / this.canvas.clientHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
         }
     }
     
@@ -140,8 +178,7 @@ class HatConfigurator {
         const container = this.canvas.parentElement;
         const rect = container.getBoundingClientRect();
         
-        this.canvas.width = rect.width;
-        this.canvas.height = rect.height;
+        // Update canvas size
         this.canvas.style.width = rect.width + 'px';
         this.canvas.style.height = rect.height + 'px';
         
@@ -156,40 +193,56 @@ class HatConfigurator {
     
     // Update hat with new configuration
     updateHat(config) {
-        if (!this.isInitialized || !this.webgl) return;
+        if (!this.isInitialized || !this.scene || !this.hatGeometry) return;
         
         this.currentConfig = Utils.validateConfig(config);
         
-        // Convert hex color to RGB
-        const color = this.webgl.hexToRgb(this.currentConfig.color);
+        // Remove existing hat
+        if (this.currentHat) {
+            this.scene.remove(this.currentHat);
+            this.currentHat = null;
+        }
         
         console.log('Creating hat with config:', this.currentConfig);
-        console.log('Color:', color);
         
-        // Create new hat mesh
-        this.currentHat = this.webgl.createHatGeometry(
+        // Create new hat geometry
+        const hatGroup = this.hatGeometry.generateHat(
             this.currentConfig.type,
             this.currentConfig.crownHeight,
-            this.currentConfig.brimSize,
-            color
+            this.currentConfig.brimSize
         );
         
-        console.log('Hat mesh created:', this.currentHat);
+        // Create material
+        const material = this.hatGeometry.createHatMaterial(
+            this.currentConfig.color,
+            'hat'
+        );
+        
+        // Apply material to all meshes in the hat group
+        this.hatGeometry.applyMaterial(hatGroup, material);
+        
+        // Position the hat
+        hatGroup.position.set(0, 0, 0);
+        
+        // Add to scene
+        this.scene.add(hatGroup);
+        this.currentHat = hatGroup;
+        
+        console.log('Hat created and added to scene');
     }
     
     // Animation loop
     animate() {
         this.animationId = requestAnimationFrame(() => this.animate());
         
-        this.time += 0.016; // ~60fps
-        
-        // Auto-rotate the hat slowly
-        if (!this.isDragging) {
-            this.webgl.updateRotation(0.005);
+        // Update controls
+        if (this.controls) {
+            this.controls.update();
         }
         
-        if (this.webgl && this.currentHat) {
-            this.webgl.render(this.currentHat, this.time);
+        // Render scene
+        if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
         }
     }
     
@@ -210,14 +263,19 @@ class HatConfigurator {
     
     // Export current view as image
     exportImage() {
-        if (!this.canvas) return;
+        if (!this.renderer) return;
         
         try {
+            // Render the current frame
+            this.renderer.render(this.scene, this.camera);
+            
             // Create download link
             const link = document.createElement('a');
             link.download = `hat-configuration-${Date.now()}.png`;
-            link.href = this.canvas.toDataURL('image/png');
+            link.href = this.renderer.domElement.toDataURL('image/png');
             link.click();
+            
+            console.log('Image exported successfully');
             
         } catch (error) {
             console.error('Export failed:', error);
@@ -274,10 +332,18 @@ class HatConfigurator {
     destroy() {
         this.pauseAnimation();
         
-        if (this.webgl) {
-            // Clean up WebGL resources
-            this.webgl = null;
+        if (this.renderer) {
+            this.renderer.dispose();
         }
+        
+        if (this.controls) {
+            this.controls.dispose();
+        }
+        
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
     }
 }
 
@@ -285,15 +351,32 @@ class HatConfigurator {
 document.addEventListener('DOMContentLoaded', () => {
     // Show loading message
     const canvas = document.getElementById('hatCanvas');
-    canvas.innerHTML = '<div class="loading">Loading 3D Hat Configurator...</div>';
+    if (canvas) {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'loading';
+        loadingDiv.textContent = 'Loading 3D Hat Configurator...';
+        canvas.parentElement.appendChild(loadingDiv);
+    }
     
     // Initialize app
     setTimeout(() => {
         try {
             window.hatConfigurator = new HatConfigurator();
+            
+            // Remove loading message
+            const loadingDiv = document.querySelector('.loading');
+            if (loadingDiv) {
+                loadingDiv.remove();
+            }
         } catch (error) {
             console.error('Failed to start application:', error);
-            canvas.innerHTML = '<div class="loading">Failed to load 3D engine. Please refresh the page.</div>';
+            
+            // Show error message
+            const loadingDiv = document.querySelector('.loading');
+            if (loadingDiv) {
+                loadingDiv.textContent = 'Failed to load 3D engine. Please refresh the page.';
+                loadingDiv.style.color = '#f44336';
+            }
         }
     }, 100);
 });
