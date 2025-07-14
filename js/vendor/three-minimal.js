@@ -88,16 +88,27 @@ window.THREE = {
                 return;
             }
             
-            // Clear canvas with a different color to verify it's working
-            gl.clearColor(0.2, 0.3, 0.4, 1.0);
+            // Clear canvas
+            gl.clearColor(0.94, 0.94, 0.94, 1.0); // Light gray background
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             gl.enable(gl.DEPTH_TEST);
+            
+            // Set viewport
+            gl.viewport(0, 0, canvas.width, canvas.height);
             
             // Update hat color and configuration from scene
             this.updateHatFromScene(scene);
             
-            // Simple rendering for demonstration
+            // Render grid floor
+            this.renderGridHelper(gl, scene, camera);
+            
+            // Render hat
             this.renderSimpleHat(gl, scene, camera);
+        };
+        
+        this.updateHatConfiguration = function() {
+            // Force buffer update on next render
+            this.needsUpdateBuffers = true;
         };
         
         this.updateHatFromScene = function(scene) {
@@ -223,7 +234,7 @@ window.THREE = {
         this.createViewMatrices = function(camera) {
             const canvas = this.domElement;
             const aspect = canvas.width / canvas.height;
-            const fov = 45 * Math.PI / 180;
+            const fov = 75 * Math.PI / 180; // Match the camera FOV from main.js
             const near = 0.1;
             const far = 100.0;
             const f = 1.0 / Math.tan(fov / 2);
@@ -236,52 +247,226 @@ window.THREE = {
                 0, 0, (2 * far * near) / (near - far), 0
             ];
             
-            // Use camera position from main.js if available, otherwise use better default
+            // Use camera position from OrbitControls
             const cameraX = (camera && camera.position) ? camera.position.x : 0;
             const cameraY = (camera && camera.position) ? camera.position.y : 2;
             const cameraZ = (camera && camera.position) ? camera.position.z : 5;
             
-            // View matrix - position camera to better frame the hat
+            // Create look-at view matrix
+            const eye = [cameraX, cameraY, cameraZ];
+            const target = [0, 0, 0];
+            const up = [0, 1, 0];
+            
+            // Calculate view matrix
+            const zAxis = this.normalize(this.subtract(eye, target));
+            const xAxis = this.normalize(this.cross(up, zAxis));
+            const yAxis = this.cross(zAxis, xAxis);
+            
             const view = [
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                -cameraX, -cameraY, -cameraZ, 1
+                xAxis[0], yAxis[0], zAxis[0], 0,
+                xAxis[1], yAxis[1], zAxis[1], 0,
+                xAxis[2], yAxis[2], zAxis[2], 0,
+                -this.dot(xAxis, eye), -this.dot(yAxis, eye), -this.dot(zAxis, eye), 1
             ];
             
             return { perspective, view };
         };
         
+        this.normalize = function(v) {
+            const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            return length > 0 ? [v[0] / length, v[1] / length, v[2] / length] : [0, 0, 0];
+        };
+        
+        this.subtract = function(a, b) {
+            return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        };
+        
+        this.cross = function(a, b) {
+            return [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+            ];
+        };
+        
+        this.dot = function(a, b) {
+            return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        };
+        
         this.renderSimpleHat = function(gl, scene, camera) {
-            // Create a simple, clearly visible hat using basic triangles
-            const time = performance.now() * 0.001;
-            
-            // Define a much simpler hat shape - just a basic triangle for testing
-            const vertices = new Float32Array([
-                // Simple triangle
-                0.0, 0.5, 0.0,    // Top
-                -0.5, -0.5, 0.0,  // Bottom left
-                0.5, -0.5, 0.0    // Bottom right
-            ]);
-            
-            const indices = new Uint16Array([
-                0, 1, 2
-            ]);
-            
-            if (!this.hatProgram) {
-                this.hatProgram = this.createSimpleHatProgram(gl);
+            // Render actual hat geometry based on the scene
+            if (!scene || !scene.children || scene.children.length === 0) {
+                console.log('No scene or children');
+                return;
             }
             
-            if (!this.hatBuffers) {
-                this.hatBuffers = this.setupHatBuffers(gl, vertices, indices);
+            // Find the hat group (typically the last child)
+            const hatGroup = scene.children[scene.children.length - 1];
+            if (!hatGroup || !hatGroup.children || hatGroup.children.length === 0) {
+                console.log('No hat group or hat children');
+                return;
+            }
+            
+            // Get current hat configuration
+            const currentConfig = this.getCurrentHatConfig(scene);
+            console.log('Rendering hat with config:', currentConfig);
+            
+            // Create or update hat geometry
+            if (!this.hatProgram) {
+                this.hatProgram = this.createHatProgram(gl);
+                console.log('Created hat program');
+            }
+            
+            if (!this.hatBuffers || this.needsUpdateBuffers) {
+                this.hatBuffers = this.createHatGeometry(gl, currentConfig);
+                this.needsUpdateBuffers = false;
+                console.log('Created hat buffers');
             }
             
             if (this.hatProgram && this.hatBuffers) {
-                this.drawSimpleHat(gl, this.hatProgram, this.hatBuffers, indices.length, time, camera);
+                this.drawHat(gl, this.hatProgram, this.hatBuffers, camera, currentConfig);
+            } else {
+                console.log('Missing hat program or buffers');
             }
         };
         
-        this.createSimpleHatProgram = function(gl) {
+        this.getCurrentHatConfig = function(scene) {
+            // Extract configuration from scene hierarchy
+            const config = {
+                type: 'fedora',
+                color: '#8B4513',
+                crownHeight: 1.0,
+                brimSize: 1.0
+            };
+            
+            // Try to get config from the hat group
+            if (scene && scene.children && scene.children.length > 0) {
+                const hatGroup = scene.children[scene.children.length - 1];
+                if (hatGroup && hatGroup.children && hatGroup.children.length > 0) {
+                    const hatMesh = hatGroup.children[0];
+                    if (hatMesh && hatMesh.material) {
+                        config.color = hatMesh.material.color || config.color;
+                    }
+                }
+            }
+            
+            return config;
+        };
+        
+        this.createHatGeometry = function(gl, config) {
+            // Create geometry based on hat type
+            const geometry = this.generateHatVertices(config);
+            
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, geometry.vertices, gl.STATIC_DRAW);
+            
+            const indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.indices, gl.STATIC_DRAW);
+            
+            return {
+                position: positionBuffer,
+                indices: indexBuffer,
+                count: geometry.indices.length
+            };
+        };
+        
+        this.generateHatVertices = function(config) {
+            // Generate vertices based on hat type - simplified for testing
+            const vertices = [];
+            const indices = [];
+            
+            const crownHeight = config.crownHeight || 1.0;
+            const brimSize = config.brimSize || 1.0;
+            const segments = 8; // Reduced for simplicity
+            
+            // Create a simple cylindrical crown
+            const crownRadius = 0.5;
+            
+            // Crown vertices - bottom circle
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const x = Math.cos(angle) * crownRadius;
+                const z = Math.sin(angle) * crownRadius;
+                vertices.push(x, 0, z);
+            }
+            
+            // Crown vertices - top circle
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const x = Math.cos(angle) * crownRadius;
+                const z = Math.sin(angle) * crownRadius;
+                vertices.push(x, crownHeight, z);
+            }
+            
+            // Crown side faces
+            for (let i = 0; i < segments; i++) {
+                const current = i;
+                const next = (i + 1) % segments;
+                const currentTop = i + segments;
+                const nextTop = next + segments;
+                
+                // Two triangles per face
+                indices.push(current, next, currentTop);
+                indices.push(next, nextTop, currentTop);
+            }
+            
+            // Crown top - center vertex
+            const topCenter = vertices.length / 3;
+            vertices.push(0, crownHeight, 0);
+            
+            // Crown top faces
+            for (let i = 0; i < segments; i++) {
+                const current = i + segments;
+                const next = ((i + 1) % segments) + segments;
+                indices.push(topCenter, current, next);
+            }
+            
+            // Simple brim
+            const brimRadius = crownRadius + brimSize * 0.5;
+            const brimY = -0.1;
+            
+            // Brim vertices - inner circle
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const x = Math.cos(angle) * crownRadius;
+                const z = Math.sin(angle) * crownRadius;
+                vertices.push(x, brimY, z);
+            }
+            
+            // Brim vertices - outer circle
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const x = Math.cos(angle) * brimRadius;
+                const z = Math.sin(angle) * brimRadius;
+                vertices.push(x, brimY, z);
+            }
+            
+            // Brim faces
+            const brimInnerStart = topCenter + 1;
+            const brimOuterStart = brimInnerStart + segments;
+            
+            for (let i = 0; i < segments; i++) {
+                const innerCurrent = brimInnerStart + i;
+                const innerNext = brimInnerStart + ((i + 1) % segments);
+                const outerCurrent = brimOuterStart + i;
+                const outerNext = brimOuterStart + ((i + 1) % segments);
+                
+                // Two triangles per brim segment
+                indices.push(innerCurrent, outerCurrent, innerNext);
+                indices.push(innerNext, outerCurrent, outerNext);
+            }
+            
+            console.log('Generated hat vertices:', vertices.length / 3, 'indices:', indices.length);
+            
+            return {
+                vertices: new Float32Array(vertices),
+                indices: new Uint16Array(indices)
+            };
+        };
+        
+        this.createHatProgram = function(gl) {
             const vertexShaderSource = `
                 attribute vec3 a_position;
                 uniform mat4 u_matrix;
@@ -289,8 +474,8 @@ window.THREE = {
                 varying vec3 v_normal;
                 void main() {
                     v_position = a_position;
-                    // Simple normal calculation
-                    v_normal = normalize(a_position);
+                    // Calculate normal approximation
+                    v_normal = normalize(vec3(a_position.x, 0.0, a_position.z));
                     gl_Position = u_matrix * vec4(a_position, 1.0);
                 }
             `;
@@ -301,18 +486,13 @@ window.THREE = {
                 varying vec3 v_position;
                 varying vec3 v_normal;
                 void main() {
-                    // Improved lighting with ambient and directional light
+                    // Lighting calculation
                     vec3 lightDirection = normalize(vec3(0.5, 0.8, 0.6));
-                    vec3 ambient = vec3(0.4, 0.4, 0.4);
+                    vec3 ambient = vec3(0.3, 0.3, 0.3);
                     
-                    // Diffuse lighting
                     float diffuse = max(dot(v_normal, lightDirection), 0.0);
+                    vec3 finalColor = u_color * (ambient + diffuse * 0.7);
                     
-                    // Simple height-based shading for better definition
-                    float heightShade = (v_position.y + 1.0) * 0.1 + 0.9;
-                    
-                    // Combine lighting
-                    vec3 finalColor = u_color * (ambient + diffuse * 0.6) * heightShade;
                     gl_FragColor = vec4(finalColor, 1.0);
                 }
             `;
@@ -321,7 +501,6 @@ window.THREE = {
             const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
             
             if (!vertexShader || !fragmentShader) {
-                console.error('Failed to create shaders');
                 return null;
             }
             
@@ -331,7 +510,7 @@ window.THREE = {
             gl.linkProgram(program);
             
             if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                console.error('Failed to link program:', gl.getProgramInfoLog(program));
+                console.error('Failed to link hat program:', gl.getProgramInfoLog(program));
                 return null;
             }
             
@@ -350,27 +529,21 @@ window.THREE = {
             return { position: positionBuffer, indices: indexBuffer };
         };
         
-        this.drawSimpleHat = function(gl, program, buffers, indexCount, time, camera) {
+        this.drawHat = function(gl, program, buffers, camera, config) {
             gl.useProgram(program);
             
-            // Set viewport
-            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-            
-            // Simple orthographic projection for testing
-            const scale = 0.5;
-            const mvp = [
-                scale, 0, 0, 0,
-                0, scale, 0, 0,
-                0, 0, scale, 0,
-                0, 0, 0, 1
-            ];
+            // Set up matrices for 3D rendering
+            const matrices = this.createViewMatrices(camera);
+            const mvpMatrix = this.multiplyMatrices(matrices.perspective, matrices.view);
             
             // Set uniforms
             const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
-            gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvp));
+            gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvpMatrix));
             
+            // Set color
             const colorLocation = gl.getUniformLocation(program, 'u_color');
-            gl.uniform3fv(colorLocation, [1.0, 0.0, 0.0]); // Red for visibility
+            const hatColor = this.hexToRgb(config.color || '#8B4513');
+            gl.uniform3fv(colorLocation, [hatColor.r, hatColor.g, hatColor.b]);
             
             // Set up vertex attributes
             const positionLocation = gl.getAttribLocation(program, 'a_position');
@@ -380,50 +553,28 @@ window.THREE = {
             
             // Draw
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
-            gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
+            gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
         };
         
-        this.createShaderProgram = function(gl) {
-            const vertexShaderSource = `
-                attribute vec3 a_position;
-                uniform mat4 u_matrix;
-                uniform mat4 u_rotation;
-                varying vec3 v_position;
-                void main() {
-                    vec4 rotatedPos = u_rotation * vec4(a_position, 1.0);
-                    gl_Position = u_matrix * rotatedPos;
-                    v_position = rotatedPos.xyz;
-                }
-            `;
+        this.hexToRgb = function(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16) / 255,
+                g: parseInt(result[2], 16) / 255,
+                b: parseInt(result[3], 16) / 255
+            } : { r: 0.5, g: 0.3, b: 0.1 };
+        };
+        
+        this.setupHatBuffers = function(gl, vertices, indices) {
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
             
-            const fragmentShaderSource = `
-                precision mediump float;
-                uniform vec3 u_color;
-                varying vec3 v_position;
-                void main() {
-                    // Simple shading based on position
-                    vec3 normal = normalize(v_position);
-                    vec3 light = normalize(vec3(0.5, 0.8, 0.6));
-                    float diffuse = max(dot(normal, light), 0.0);
-                    vec3 finalColor = u_color * (diffuse * 0.7 + 0.3);
-                    gl_FragColor = vec4(finalColor, 1.0);
-                }
-            `;
+            const indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
             
-            const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-            const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-            
-            const program = gl.createProgram();
-            gl.attachShader(program, vertexShader);
-            gl.attachShader(program, fragmentShader);
-            gl.linkProgram(program);
-            
-            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-                console.error('Shader program failed to link:', gl.getProgramInfoLog(program));
-                return null;
-            }
-            
-            return program;
+            return { position: positionBuffer, indices: indexBuffer };
         };
         
         this.createShader = function(gl, type, source) {
@@ -438,82 +589,6 @@ window.THREE = {
             }
             
             return shader;
-        };
-        
-        this.createBuffers = function(gl, vertices, indices) {
-            const positionBuffer = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-            
-            const indexBuffer = gl.createBuffer();
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-            
-            return { position: positionBuffer, indices: indexBuffer };
-        };
-        
-        this.drawHat = function(gl, program, buffers, indexCount) {
-            gl.useProgram(program);
-            
-            // Set up perspective matrix
-            const aspect = gl.canvas.width / gl.canvas.height;
-            const fov = Math.PI / 4;
-            const near = 0.1;
-            const far = 100.0;
-            const f = 1.0 / Math.tan(fov / 2);
-            const rangeInv = 1.0 / (near - far);
-            
-            const perspectiveMatrix = new Float32Array([
-                f / aspect, 0, 0, 0,
-                0, f, 0, 0,
-                0, 0, (near + far) * rangeInv, -1,
-                0, 0, near * far * rangeInv * 2, 0
-            ]);
-            
-            // Set up rotation matrix (auto-rotate)
-            const time = performance.now() * 0.001;
-            const rotY = time * 0.3;
-            const cos = Math.cos(rotY);
-            const sin = Math.sin(rotY);
-            
-            const rotationMatrix = new Float32Array([
-                cos, 0, sin, 0,
-                0, 1, 0, 0,
-                -sin, 0, cos, 0,
-                0, 0, 0, 1
-            ]);
-            
-            // Set up view matrix (camera positioned back)
-            const viewMatrix = new Float32Array([
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, -0.5, -4, 1
-            ]);
-            
-            // Combine matrices
-            const mvpMatrix = this.multiplyMatrices(perspectiveMatrix, viewMatrix);
-            
-            const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
-            gl.uniformMatrix4fv(matrixLocation, false, mvpMatrix);
-            
-            const rotationLocation = gl.getUniformLocation(program, 'u_rotation');
-            gl.uniformMatrix4fv(rotationLocation, false, rotationMatrix);
-            
-            // Set color (use the current hat color from the scene)
-            const colorLocation = gl.getUniformLocation(program, 'u_color');
-            const hatColor = this.currentHatColor || [0.5, 0.3, 0.1];
-            gl.uniform3fv(colorLocation, hatColor);
-            
-            // Set up position attribute
-            const positionLocation = gl.getAttribLocation(program, 'a_position');
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-            gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(positionLocation);
-            
-            // Draw
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
-            gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, 0);
         };
         
         this.dispose = function() {};
@@ -623,11 +698,64 @@ window.THREE = {
         this.maxPolarAngle = Math.PI / 2;
         this.target = { x: 0, y: 0, z: 0, set: function(x, y, z) { this.x = x; this.y = y; this.z = z; } };
         
+        // Mouse state
+        this.isMouseDown = false;
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.rotationX = 0;
+        this.rotationY = 0;
+        this.distance = 3; // Reduce distance to get closer to the hat
+        
+        // Add mouse event listeners
+        this.domElement.addEventListener('mousedown', (e) => {
+            this.isMouseDown = true;
+            this.mouseX = e.clientX;
+            this.mouseY = e.clientY;
+        });
+        
+        this.domElement.addEventListener('mousemove', (e) => {
+            if (!this.isMouseDown) return;
+            
+            const deltaX = e.clientX - this.mouseX;
+            const deltaY = e.clientY - this.mouseY;
+            
+            this.rotationY += deltaX * 0.01;
+            this.rotationX += deltaY * 0.01;
+            
+            // Clamp vertical rotation
+            this.rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.rotationX));
+            
+            this.mouseX = e.clientX;
+            this.mouseY = e.clientY;
+        });
+        
+        this.domElement.addEventListener('mouseup', () => {
+            this.isMouseDown = false;
+        });
+        
+        this.domElement.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY * 0.01;
+            this.distance += delta;
+            this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance));
+        });
+        
         this.update = function() {
-            // Simple orbit controls simulation
+            // Update camera position based on rotation and distance
+            const x = Math.sin(this.rotationY) * Math.cos(this.rotationX) * this.distance;
+            const y = Math.sin(this.rotationX) * this.distance + 1; // Lower the camera Y offset
+            const z = Math.cos(this.rotationY) * Math.cos(this.rotationX) * this.distance;
+            
+            this.camera.position.set(x, y, z);
         };
         
-        this.dispose = function() {};
+        this.dispose = function() {
+            // Remove event listeners
+            this.domElement.removeEventListener('mousedown', this.onMouseDown);
+            this.domElement.removeEventListener('mousemove', this.onMouseMove);
+            this.domElement.removeEventListener('mouseup', this.onMouseUp);
+            this.domElement.removeEventListener('wheel', this.onWheel);
+        };
     },
     
     // GridHelper class for floor reference
