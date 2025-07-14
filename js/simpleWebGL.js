@@ -128,9 +128,9 @@ class SimpleWebGL {
         // Create a simple test triangle to debug rendering
         const testGeometry = {
             vertices: [
-                0.0, 0.5, 0.0,   // Top vertex
-                -0.5, -0.5, 0.0, // Bottom left
-                0.5, -0.5, 0.0   // Bottom right
+                0.0, 0.5, -2.0,   // Top vertex (closer to camera)
+                -0.5, -0.5, -2.0, // Bottom left  
+                0.5, -0.5, -2.0   // Bottom right
             ],
             normals: [
                 0.0, 0.0, 1.0,   // Top vertex normal
@@ -388,8 +388,8 @@ class SimpleWebGL {
     render(mesh, time) {
         const gl = this.gl;
         
-        // Clear canvas
-        gl.clearColor(0.94, 0.94, 0.94, 1.0);
+        // Clear canvas with proper background color
+        gl.clearColor(0.94, 0.94, 0.94, 1.0);  // Light gray background
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         
         if (!mesh) {
