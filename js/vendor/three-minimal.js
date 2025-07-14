@@ -294,40 +294,111 @@ window.THREE = {
         };
         
         this.renderSimpleHat = function(gl, scene, camera) {
-            // Render actual hat geometry based on the scene
-            if (!scene || !scene.children || scene.children.length === 0) {
-                console.log('No scene or children');
-                return;
+            // Simple test - draw a basic triangle to verify the pipeline works
+            if (!this.testProgram) {
+                this.testProgram = this.createTestProgram(gl);
             }
             
-            // Find the hat group (typically the last child)
-            const hatGroup = scene.children[scene.children.length - 1];
-            if (!hatGroup || !hatGroup.children || hatGroup.children.length === 0) {
-                console.log('No hat group or hat children');
-                return;
+            if (!this.testBuffers) {
+                this.testBuffers = this.createTestGeometry(gl);
             }
             
-            // Get current hat configuration
-            const currentConfig = this.getCurrentHatConfig(scene);
-            console.log('Rendering hat with config:', currentConfig);
+            if (this.testProgram && this.testBuffers) {
+                this.drawTestShape(gl, this.testProgram, this.testBuffers, camera);
+            }
+        };
+        
+        this.createTestProgram = function(gl) {
+            const vertexShaderSource = `
+                attribute vec3 a_position;
+                uniform mat4 u_matrix;
+                void main() {
+                    gl_Position = u_matrix * vec4(a_position, 1.0);
+                }
+            `;
             
-            // Create or update hat geometry
-            if (!this.hatProgram) {
-                this.hatProgram = this.createHatProgram(gl);
-                console.log('Created hat program');
+            const fragmentShaderSource = `
+                precision mediump float;
+                uniform vec3 u_color;
+                void main() {
+                    gl_FragColor = vec4(u_color, 1.0);
+                }
+            `;
+            
+            const vertexShader = this.createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            const fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            
+            if (!vertexShader || !fragmentShader) {
+                return null;
             }
             
-            if (!this.hatBuffers || this.needsUpdateBuffers) {
-                this.hatBuffers = this.createHatGeometry(gl, currentConfig);
-                this.needsUpdateBuffers = false;
-                console.log('Created hat buffers');
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Failed to link test program:', gl.getProgramInfoLog(program));
+                return null;
             }
             
-            if (this.hatProgram && this.hatBuffers) {
-                this.drawHat(gl, this.hatProgram, this.hatBuffers, camera, currentConfig);
-            } else {
-                console.log('Missing hat program or buffers');
-            }
+            return program;
+        };
+        
+        this.createTestGeometry = function(gl) {
+            // Simple triangle
+            const vertices = new Float32Array([
+                0.0, 0.5, 0.0,    // Top
+                -0.5, -0.5, 0.0,  // Bottom left
+                0.5, -0.5, 0.0    // Bottom right
+            ]);
+            
+            const indices = new Uint16Array([0, 1, 2]);
+            
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+            
+            const indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+            
+            return {
+                position: positionBuffer,
+                indices: indexBuffer,
+                count: indices.length
+            };
+        };
+        
+        this.drawTestShape = function(gl, program, buffers, camera) {
+            gl.useProgram(program);
+            
+            // Simple orthographic projection
+            const mvp = [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ];
+            
+            // Set uniforms
+            const matrixLocation = gl.getUniformLocation(program, 'u_matrix');
+            gl.uniformMatrix4fv(matrixLocation, false, new Float32Array(mvp));
+            
+            const colorLocation = gl.getUniformLocation(program, 'u_color');
+            gl.uniform3fv(colorLocation, [0.5, 0.3, 0.1]); // Brown color
+            
+            // Set up vertex attributes
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+            gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(positionLocation);
+            
+            // Draw
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+            gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
+            
+            console.log('Test triangle drawn');
         };
         
         this.getCurrentHatConfig = function(scene) {
@@ -551,6 +622,10 @@ window.THREE = {
             gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(positionLocation);
             
+            // Debug: Log camera position and color
+            console.log('Drawing hat at camera position:', camera.position.x, camera.position.y, camera.position.z);
+            console.log('Hat color:', hatColor);
+            
             // Draw
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
             gl.drawElements(gl.TRIANGLES, buffers.count, gl.UNSIGNED_SHORT, 0);
@@ -706,6 +781,19 @@ window.THREE = {
         this.rotationY = 0;
         this.distance = 3; // Reduce distance to get closer to the hat
         
+        // Update method defined here
+        this.update = function() {
+            // Update camera position based on rotation and distance
+            const x = Math.sin(this.rotationY) * Math.cos(this.rotationX) * this.distance;
+            const y = Math.sin(this.rotationX) * this.distance + 1; // Lower the camera Y offset
+            const z = Math.cos(this.rotationY) * Math.cos(this.rotationX) * this.distance;
+            
+            this.camera.position.set(x, y, z);
+        };
+        
+        // Initialize camera position
+        this.update();
+        
         // Add mouse event listeners
         this.domElement.addEventListener('mousedown', (e) => {
             this.isMouseDown = true;
@@ -739,15 +827,6 @@ window.THREE = {
             this.distance += delta;
             this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance));
         });
-        
-        this.update = function() {
-            // Update camera position based on rotation and distance
-            const x = Math.sin(this.rotationY) * Math.cos(this.rotationX) * this.distance;
-            const y = Math.sin(this.rotationX) * this.distance + 1; // Lower the camera Y offset
-            const z = Math.cos(this.rotationY) * Math.cos(this.rotationX) * this.distance;
-            
-            this.camera.position.set(x, y, z);
-        };
         
         this.dispose = function() {
             // Remove event listeners
